@@ -99,6 +99,8 @@ function searchTopChunks(questionEmbedding) {
 }
 
 // ---------- 답변 생성 ----------
+const NOT_COVERED_TEXT = "이 내용은 제공된 영상들에서 다루지 않았습니다.";
+
 function buildPrompt(question, topChunks) {
   const context = topChunks
     .map(
@@ -109,9 +111,9 @@ function buildPrompt(question, topChunks) {
 
   return `아래는 여러 유튜브 영상의 자막 발췌입니다. 질문에 답할 때 반드시 이 내용에만 근거하세요.
 자막에 관련 내용이 전혀 없다면 다른 지식으로 추측하지 말고 answer 필드에 정확히 다음과 같이 답하세요:
-"이 내용은 제공된 영상들에서 다루지 않았습니다."
+"${NOT_COVERED_TEXT}"
 
-관련 내용이 있다면, 어떤 출처(예: 출처 1, 출처 3)에서 나온 내용인지 답변에 자연스럽게 포함하세요.
+관련 내용이 있다면, 답변 문장 속에서 그 내용이 나온 출처를 [1], [3]처럼 대괄호와 번호로 표시하세요 (자연스러운 문장 중간에 넣으면 됩니다).
 
 그리고 아래 제공된 출처 발췌 ${topChunks.length}개 각각에 대해, 실제로 무슨 내용을 담고 있는지 20자 내외의 짧은 한 문장으로 요약하세요.
 질문과 직접 관련이 없는 출처도 빠짐없이 전부 요약하세요.
@@ -215,18 +217,25 @@ function renderAnswer(answer, topChunks, sourceSummaries) {
   const sourcesEl = document.getElementById("sources");
   sourcesEl.innerHTML = "";
 
+  // 자막에 없는 내용이라고 답했다면 관련 없는 출처를 보여주지 않는다
+  if (answer.trim() === NOT_COVERED_TEXT) {
+    document.getElementById("answerCard").style.display = "block";
+    return;
+  }
+
   const seen = new Set();
   topChunks.forEach(({ chunk }, i) => {
     const key = `${chunk.video_id}_${Math.floor(chunk.start)}`;
     if (seen.has(key)) return;
     seen.add(key);
 
+    const sourceIndex = i + 1; // 답변 속 [1], [2] 표시와 매칭되는 번호
     const seconds = Math.floor(chunk.start || 0);
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
     const timeLabel = `${minutes}:${String(secs).padStart(2, "0")}`;
     const link = `${chunk.url}${chunk.url.includes("?") ? "&" : "?"}t=${seconds}s`;
-    const summary = (sourceSummaries && sourceSummaries[i + 1]) || "";
+    const summary = (sourceSummaries && sourceSummaries[sourceIndex]) || "";
 
     const a = document.createElement("a");
     a.href = link;
@@ -234,7 +243,7 @@ function renderAnswer(answer, topChunks, sourceSummaries) {
     a.rel = "noopener";
     a.className = "source-item";
     a.innerHTML =
-      `<div class="video-title">${chunk.title}</div>` +
+      `<div class="source-header"><span class="source-badge">${sourceIndex}</span><span class="video-title">${chunk.title}</span></div>` +
       (summary ? `<div class="source-summary">${summary}</div>` : "") +
       `<div class="timestamp">${timeLabel} 지점 보기</div>`;
     sourcesEl.appendChild(a);

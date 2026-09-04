@@ -16,9 +16,22 @@ async function loadIndex() {
   try {
     const res = await fetch("data/index.json", { cache: "no-store" });
     if (!res.ok) throw new Error("index.json을 불러오지 못했습니다");
-    INDEX = await res.json();
+    const raw = await res.json();
+
+    // embedding이 없거나 형식이 잘못된 항목은 걸러낸다 (검색 중 오류 방지)
+    INDEX = raw.filter(
+      (c) => Array.isArray(c.embedding) && c.embedding.length > 0
+    );
+    const skipped = raw.length - INDEX.length;
+    if (skipped > 0) {
+      console.warn(`embedding이 없는 청크 ${skipped}개를 건너뜀`);
+    }
+
     const videoIds = new Set(INDEX.map((c) => c.video_id));
     countEl.textContent = `영상 ${videoIds.size}개, 청크 ${INDEX.length}개 로드됨`;
+    if (skipped > 0) {
+      countEl.textContent += ` (형식이 잘못된 ${skipped}개 청크는 제외됨)`;
+    }
   } catch (e) {
     countEl.textContent = "인덱스를 불러오지 못했습니다. data/index.json이 있는지 확인하세요.";
     console.error(e);

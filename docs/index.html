@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영상 아카이브 검색</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px 16px 80px;
+    line-height: 1.6;
+    color: #1a1a1a;
+    background: #fafafa;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+
+  .card {
+    background: #fff;
+    border: 1px solid #e2e2e2;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  #apiKeySection.saved { display: none; }
+  #apiKeySection label { display: block; font-size: 13px; color: #444; margin-bottom: 6px; }
+  #apiKeySection input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  #apiKeySection .hint { font-size: 12px; color: #888; }
+
+  #keyStatus {
+    display: none;
+    font-size: 13px;
+    color: #444;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  #keyStatus.visible { display: flex; }
+  #keyStatus button {
+    background: none;
+    border: none;
+    color: #b3261e;
+    cursor: pointer;
+    font-size: 13px;
+    text-decoration: underline;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 70px;
+    padding: 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    resize: vertical;
+  }
+
+  button.primary {
+    margin-top: 10px;
+    background: #1a1a1a;
+    color: #fff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+
+  #status { font-size: 13px; color: #888; margin-top: 10px; min-height: 18px; }
+
+  #answer { white-space: pre-wrap; font-size: 15px; }
+
+  .sources { margin-top: 16px; }
+  .source-item {
+    display: block;
+    padding: 10px 12px;
+    border: 1px solid #e2e2e2;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    text-decoration: none;
+    color: #1a1a1a;
+    font-size: 13px;
+  }
+  .source-item:hover { border-color: #999; }
+  .source-item .video-title { font-weight: 600; margin-bottom: 2px; }
+  .source-item .timestamp { color: #888; }
+
+  #videoCount { font-size: 13px; color: #888; }
+</style>
+</head>
+<body>
+
+<h1>영상 아카이브 검색</h1>
+<p class="subtitle">유튜브 영상 자막을 기반으로 질문에 답합니다. 영상에 없는 내용은 없다고 알려줍니다.</p>
+<p id="videoCount">인덱스 불러오는 중...</p>
+
+<div class="card" id="apiKeySection">
+  <label for="apiKeyInput">Gemini API 키</label>
+  <input type="password" id="apiKeyInput" placeholder="AIza...로 시작하는 키를 입력하세요">
+  <button class="primary" onclick="saveApiKey()">저장</button>
+  <p class="hint">
+    Google AI Studio(aistudio.google.com)에서 무료로 발급받을 수 있습니다.
+    키는 이 브라우저에만 저장되고 서버로 전송되지 않습니다.
+  </p>
+</div>
+
+<div id="keyStatus">
+  <span>API 키가 저장되어 있습니다.</span>
+  <button onclick="clearApiKey()">키 삭제</button>
+</div>
+
+<div class="card">
+  <textarea id="question" placeholder="영상들에 대해 궁금한 걸 물어보세요"></textarea>
+  <button class="primary" id="askBtn" onclick="handleAsk()">질문하기</button>
+  <div id="status"></div>
+</div>
+
+<div class="card" id="answerCard" style="display:none;">
+  <div id="answer"></div>
+  <div class="sources" id="sources"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

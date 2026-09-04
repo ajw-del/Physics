@@ -1,5 +1,5 @@
 const EMBED_MODEL = "gemini-embedding-001";
-const GEN_MODEL = "gemini-2.5-flash-lite";
+const GEN_MODEL = "gemini-3.5-flash-lite";
 const TOP_K = 6;
 const API_KEY_STORAGE_KEY = "gemini_api_key";
 

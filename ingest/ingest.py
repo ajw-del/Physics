@@ -22,6 +22,7 @@
 
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -31,13 +32,16 @@ from collections import defaultdict
 import requests
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
+    IpBlocked,
     NoTranscriptFound,
+    RequestBlocked,
     TranscriptsDisabled,
     VideoUnavailable,
 )
 
 # ---- 설정 ----
 CHUNK_CHAR_LIMIT = 800  # 청크 하나당 최대 글자 수
+TRANSCRIPT_DELAY_RANGE = (2, 5)  # 영상 간 자막 요청 간격(초), IP 차단 예방용
 EMBED_MODEL = "gemini-embedding-001"
 BATCH_SIZE = 50  # 한 번의 API 호출로 임베딩할 청크 개수
 MAX_RETRIES = 5  # 요청 한도(429)에 걸렸을 때 재시도 횟수
@@ -204,13 +208,19 @@ def main():
     # 기존 인덱스가 있으면 불러와서 이미 완전히 처리된 영상은 건너뛴다
     existing_chunks = []
     processed_video_ids = set()
-    if os.path.exists(OUTPUT_FILE):
-        with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
-            existing_chunks = json.load(f)
-            processed_video_ids = {c["video_id"] for c in existing_chunks}
+    if os.path.exists(OUTPUT_FILE) and os.path.getsize(OUTPUT_FILE) > 0:
+        try:
+            with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
+                existing_chunks = json.load(f)
+                processed_video_ids = {c["video_id"] for c in existing_chunks}
+        except json.JSONDecodeError:
+            print(f"경고: {OUTPUT_FILE} 파일이 손상되어 있어 비어있는 것으로 간주하고 새로 시작합니다.")
+            existing_chunks = []
+            processed_video_ids = set()
 
     # 1단계: 새 영상들의 자막을 모두 가져와서 청크로 쪼갠다 (아직 임베딩 안 함)
     video_chunks = defaultdict(list)  # video_id -> [chunk, ...]
+    ip_blocked = False
     for url in urls:
         video_id = extract_video_id(url)
         if not video_id:
@@ -222,7 +232,16 @@ def main():
 
         print(f"자막 확인 중: {url}")
         title = get_video_title(video_id)
-        segments = fetch_transcript(video_id)
+        try:
+            segments = fetch_transcript(video_id)
+        except (IpBlocked, RequestBlocked):
+            print(
+                "\n유튜브가 이 IP에서의 요청을 일시적으로 막았습니다 (IpBlocked). "
+                "지금까지 확보한 영상만 저장하고 여기서 중단합니다."
+            )
+            print("잠시 후(보통 몇십 분~몇 시간 뒤) 또는 내일 다시 실행하면, 안 끝난 영상부터 이어서 처리됩니다.")
+            ip_blocked = True
+            break
         if not segments:
             continue
 
@@ -230,10 +249,16 @@ def main():
         print(f"  '{title}' -> {len(chunks)}개 청크")
         video_chunks[video_id] = chunks
 
+        # 영상 사이에 살짝 간격을 둬서 차단 가능성을 줄인다
+        time.sleep(random.uniform(*TRANSCRIPT_DELAY_RANGE))
+
     all_new_chunks = [c for chunks in video_chunks.values() for c in chunks]
 
     if not all_new_chunks:
-        print("\n새로 추가할 영상이 없습니다.")
+        if ip_blocked:
+            print("\n이번 실행에서는 새로 처리된 영상이 없습니다. 위 안내대로 나중에 다시 시도해주세요.")
+        else:
+            print("\n새로 추가할 영상이 없습니다.")
         return
 
     print(f"\n총 {len(all_new_chunks)}개 청크를 배치({BATCH_SIZE}개씩)로 임베딩합니다...")

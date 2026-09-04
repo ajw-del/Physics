@@ -108,10 +108,22 @@ function buildPrompt(question, topChunks) {
     .join("\n\n");
 
   return `아래는 여러 유튜브 영상의 자막 발췌입니다. 질문에 답할 때 반드시 이 내용에만 근거하세요.
-자막에 관련 내용이 전혀 없다면 다른 지식으로 추측하지 말고 정확히 다음과 같이 답하세요:
+자막에 관련 내용이 전혀 없다면 다른 지식으로 추측하지 말고 answer 필드에 정확히 다음과 같이 답하세요:
 "이 내용은 제공된 영상들에서 다루지 않았습니다."
 
 관련 내용이 있다면, 어떤 출처(예: 출처 1, 출처 3)에서 나온 내용인지 답변에 자연스럽게 포함하세요.
+
+그리고 아래 제공된 출처 발췌 ${topChunks.length}개 각각에 대해, 실제로 무슨 내용을 담고 있는지 20자 내외의 짧은 한 문장으로 요약하세요.
+질문과 직접 관련이 없는 출처도 빠짐없이 전부 요약하세요.
+
+반드시 아래 JSON 형식으로만 답하세요. 설명이나 코드블록 표시 없이 JSON 객체 하나만 출력하세요:
+{
+  "answer": "질문에 대한 답변 텍스트",
+  "sources": [
+    { "index": 1, "summary": "출처 1 발췌의 한 줄 요약" }
+  ]
+}
+(sources 배열은 반드시 ${topChunks.length}개 항목을 순서대로 모두 포함해야 합니다)
 
 [자막 발췌]
 ${context}
@@ -127,6 +139,7 @@ async function generateAnswer(prompt, apiKey) {
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: "application/json" },
     }),
   });
   if (!res.ok) {
@@ -134,7 +147,9 @@ async function generateAnswer(prompt, apiKey) {
     throw new Error(`답변 생성 요청 실패: ${res.status} ${err}`);
   }
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "(응답을 받지 못했습니다)";
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("응답을 받지 못했습니다");
+  return text;
 }
 
 // ---------- UI 흐름 ----------
@@ -170,9 +185,21 @@ async function handleAsk() {
 
     statusEl.textContent = "답변을 만드는 중...";
     const prompt = buildPrompt(question, topChunks);
-    const answer = await generateAnswer(prompt, apiKey);
+    const rawResponse = await generateAnswer(prompt, apiKey);
 
-    renderAnswer(answer, topChunks);
+    let answer = rawResponse;
+    const sourceSummaries = {};
+    try {
+      const parsed = JSON.parse(rawResponse);
+      answer = parsed.answer || rawResponse;
+      (parsed.sources || []).forEach((s) => {
+        if (s && s.index != null) sourceSummaries[s.index] = s.summary || "";
+      });
+    } catch (e) {
+      console.warn("요약 JSON 파싱 실패, 요약 없이 표시합니다:", e);
+    }
+
+    renderAnswer(answer, topChunks, sourceSummaries);
     statusEl.textContent = "";
   } catch (e) {
     console.error(e);
@@ -182,14 +209,14 @@ async function handleAsk() {
   }
 }
 
-function renderAnswer(answer, topChunks) {
+function renderAnswer(answer, topChunks, sourceSummaries) {
   document.getElementById("answer").textContent = answer;
 
   const sourcesEl = document.getElementById("sources");
   sourcesEl.innerHTML = "";
 
   const seen = new Set();
-  topChunks.forEach(({ chunk }) => {
+  topChunks.forEach(({ chunk }, i) => {
     const key = `${chunk.video_id}_${Math.floor(chunk.start)}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -199,13 +226,17 @@ function renderAnswer(answer, topChunks) {
     const secs = seconds % 60;
     const timeLabel = `${minutes}:${String(secs).padStart(2, "0")}`;
     const link = `${chunk.url}${chunk.url.includes("?") ? "&" : "?"}t=${seconds}s`;
+    const summary = (sourceSummaries && sourceSummaries[i + 1]) || "";
 
     const a = document.createElement("a");
     a.href = link;
     a.target = "_blank";
     a.rel = "noopener";
     a.className = "source-item";
-    a.innerHTML = `<div class="video-title">${chunk.title}</div><div class="timestamp">${timeLabel} 지점 보기</div>`;
+    a.innerHTML =
+      `<div class="video-title">${chunk.title}</div>` +
+      (summary ? `<div class="source-summary">${summary}</div>` : "") +
+      `<div class="timestamp">${timeLabel} 지점 보기</div>`;
     sourcesEl.appendChild(a);
   });
 
